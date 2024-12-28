@@ -25,6 +25,7 @@
 - Explain what and why vs. how
 - Each modified file should have its own description.
 - In traditional Chinese.
+- Describing content in Taiwan Chinese usage habits.
 
 ## Examples
 [feat] auth: implement JWT authentication
