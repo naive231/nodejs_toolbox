@@ -1,12 +1,12 @@
-const { execSync } = require('child_process');
-const fs = require('fs');
+import { execSync } from 'child_process';
+import fs from 'fs';
 
 // Minimum Node.js version required
 const MIN_NODE_VERSION = '16.0.0';
 
 // Required npm packages
 const REQUIRED_PACKAGES = [
-    'axios',
+    'node-fetch',
     'fluent-ffmpeg',
     'ffmpeg-static',
     'node-m3u8-downloader',
@@ -14,7 +14,7 @@ const REQUIRED_PACKAGES = [
 ];
 
 // Install a missing npm package
-function installPackage(pkg) {
+async function installPackage(pkg) {
     try {
         console.log(`Installing package "${pkg}"...`);
         execSync(`npm install ${pkg}`, { stdio: 'inherit' });
@@ -46,24 +46,24 @@ function compareVersions(version1, version2) {
 }
 
 // Check for required npm packages and install if missing
-function checkNpmPackages() {
+async function checkNpmPackages() {
     console.log('\nChecking required npm packages:');
-    REQUIRED_PACKAGES.forEach(pkg => {
+    for (const pkg of REQUIRED_PACKAGES) {
         try {
-            require.resolve(pkg);
+            await import(pkg); // Dynamically check for ESM-compatible modules
             console.log(`✅ "${pkg}" has been found.`);
         } catch {
             console.error(`❌ "${pkg}" is missing.`);
-            installPackage(pkg);
+            await installPackage(pkg);
         }
-    });
+    }
 }
 
 // Check for FFmpeg availability
-function checkFFmpeg() {
+async function checkFFmpeg() {
     try {
-        // Try ffmpeg-static
-        const ffmpegPath = require('ffmpeg-static');
+        // Dynamically import ffmpeg-static
+        const { default: ffmpegPath } = await import('ffmpeg-static');
         if (fs.existsSync(ffmpegPath)) {
             console.log('✅ FFmpeg is available via ffmpeg-static.');
             return;
@@ -90,13 +90,13 @@ function checkFFmpeg() {
 }
 
 // Main function
-function main() {
+async function main() {
     console.log('Running environment setup...\n');
 
     // Perform all checks
     checkNodeVersion();
-    checkNpmPackages();
-    checkFFmpeg();
+    await checkNpmPackages();
+    await checkFFmpeg();
 
     console.log('\n✅ Environment setup completed successfully! You are ready to run the main script.');
 }
