@@ -48,11 +48,17 @@ const readTasksFromFile = () => {
 const downloadFile = (url, output) => {
     return new Promise((resolve, reject) => {
         const command = `ffmpeg -i "${url}" -c copy "${output}"`;
-        exec(command, (error) => {
-            if (error) {
-                reject(`Failed to download ${output}: ${error.message}`);
-            } else {
+        const child = exec(command);
+
+        // Stream ffmpeg output to the console
+        child.stdout.on('data', (data) => console.log(data));
+        child.stderr.on('data', (data) => console.error(data));
+
+        child.on('close', (code) => {
+            if (code === 0) {
                 resolve(`Downloaded: ${output}`);
+            } else {
+                reject(`Failed to download ${output}. Exit code: ${code}`);
             }
         });
     });
