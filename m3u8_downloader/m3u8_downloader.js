@@ -1,11 +1,12 @@
 import fs from 'fs';
 import axios from 'axios';
-import { exec } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import readline from 'readline';
-import { promisify } from 'util';
+import { SingleBar, Presets } from 'cli-progress';
+import util from 'util';
 
-// Promisify exec for async/await
-const execPromise = promisify(exec);
+// Convert exec to promise
+const execPromise = util.promisify(execSync);
 
 // Configurations
 const downloadTasksFile = './download_tasks.json';
@@ -13,13 +14,28 @@ const downloadTasksFile = './download_tasks.json';
 // Utility functions
 const checkDependencies = async () => {
     try {
-        await execPromise('which ffmpeg');
-        console.log('ffmpeg is installed.');
-    } catch {
+        // Check if ffmpeg exists
+        const ffmpegPath = execSync('which ffmpeg').toString().trim();
+        console.log('ffmpeg is installed at:', ffmpegPath);
+        
+        // Verify ffmpeg works
+        execSync('ffmpeg -version');
+        return true;
+    } catch (error) {
         console.error('Error: ffmpeg is not installed or not in PATH.');
+        console.error('Detailed error:', error.message);
         process.exit(1);
     }
 };
+
+// Add ffmpeg check with detailed error reporting
+try {
+    const ffmpegPath = execSync('which ffmpeg').toString().trim();
+    console.log(`Found ffmpeg at: ${ffmpegPath}`);
+} catch (error) {
+    console.error('Error: ffmpeg check failed:', error);
+    process.exit(1);
+}
 
 const fetchM3U8Links = async (url) => {
     try {
@@ -45,24 +61,72 @@ const readTasksFromFile = () => {
     return [];
 };
 
-const downloadFile = (url, output) => {
+// Function to convert HH:MM:SS.ms to seconds
+const convertTimeToSeconds = (time) => {
+    const [hours, minutes, seconds] = time.split(':').map(parseFloat);
+    return hours * 3600 + minutes * 60 + seconds;
+};
+
+
+// Update downloadFile function
+async function downloadFile(url, outputPath) {
     return new Promise((resolve, reject) => {
-        const command = `ffmpeg -i "${url}" -c copy "${output}"`;
-        const child = exec(command);
+        const filename = outputPath.split('/').pop(); // Extract filename
+        const progressBar = new SingleBar({
+            format: `${filename} [{bar}] {percentage}% | ETA: {eta}s | {value}/{total} | Speed: {speed}`,
+            barCompleteChar: '\u2588',
+            barIncompleteChar: '\u2591',
+            hideCursor: true,
+            clearOnComplete: true
+        }, Presets.shades_classic);
 
-        // Stream ffmpeg output to the console
-        child.stdout.on('data', (data) => console.log(data));
-        child.stderr.on('data', (data) => console.error(data));
+        const ffmpeg = spawn('ffmpeg', [
+            '-i', url,
+            '-c', 'copy',
+            outputPath,
+            '-progress', 'pipe:1'
+        ]);
 
-        child.on('close', (code) => {
-            if (code === 0) {
-                resolve(`Downloaded: ${output}`);
-            } else {
-                reject(`Failed to download ${output}. Exit code: ${code}`);
+        let duration = 0;
+        let started = false;
+
+        ffmpeg.stderr.on('data', (data) => {
+            const output = data.toString();
+            if (!started && output.includes('Duration')) {
+                const match = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})/);
+                if (match) {
+                    duration = (parseInt(match[1]) * 3600) + 
+                              (parseInt(match[2]) * 60) + 
+                              parseInt(match[3]);
+                    progressBar.start(duration, 0);
+                    started = true;
+                }
             }
         });
+
+        ffmpeg.stdout.on('data', (data) => {
+            const output = data.toString();
+            if (output.includes('out_time_ms')) {
+                const time = parseInt(output.match(/out_time_ms=(\d+)/)[1]) / 1000000;
+                progressBar.update(time);
+            }
+        });
+
+        ffmpeg.on('close', (code) => {
+            progressBar.stop();
+            if (code === 0) {
+                resolve(`Successfully downloaded to ${outputPath}`);
+            } else {
+                reject(new Error(`FFmpeg process exited with code ${code}`));
+            }
+        });
+
+        ffmpeg.on('error', (err) => {
+            progressBar.stop();
+            reject(err);
+        });
     });
-};
+}
 
 // Main process
 (async () => {
