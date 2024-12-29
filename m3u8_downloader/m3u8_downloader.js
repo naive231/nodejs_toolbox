@@ -9,7 +9,7 @@ import util from 'util';
 const execPromise = util.promisify(execSync);
 
 // Configurations
-const downloadTasksFile = './download_tasks.json';
+const downloadTasksFile = '.download_tasks.json';
 
 // Utility functions
 const checkDependencies = async () => {
@@ -39,9 +39,44 @@ try {
 
 const fetchM3U8Links = async (url) => {
     try {
-        const response = await axios.get(url);
-        const matches = [...response.data.matchAll(/https?:\/\/[^\s"']+\.m3u8/g)];
-        return matches.map(match => match[0]);
+        // Extract base URL for relative path resolution
+        const baseUrl = url.match(/^(https?:\/\/[^/]+)/)[1];
+        const dirUrl = url.substring(0, url.lastIndexOf('/'));
+
+        // Fetch URL content
+        const curlCmd = [
+            'curl',
+            '--silent',
+            '--max-time', '30',
+            url
+        ];
+
+        const result = execSync(curlCmd.join(' '), { encoding: 'utf-8' });
+
+        // Extract m3u8 URLs using regex
+        const matches = result.match(/["']([^"' ]+\.m3u8[^"' ]*)["']/g) || [];
+        
+        // Process and resolve URLs
+        const urls = [...new Set(matches
+            .map(match => match.replace(/^["']|["']$/g, ''))  // Remove quotes
+            .map(link => {
+                link = link.replace(/\\/g, '');  // Remove escape chars
+                if (link.startsWith('http')) {
+                    return link;
+                } else if (link.startsWith('/')) {
+                    return `${baseUrl}${link}`;
+                } else {
+                    return `${dirUrl}/${link}`;
+                }
+            })
+            .filter(link => link.includes('.m3u8'))
+        )];
+
+        if (urls.length === 0) {
+            console.warn('No M3U8 URLs found in response');
+        }
+
+        return urls;
     } catch (error) {
         console.error('Failed to fetch M3U8 links:', error.message);
         return [];
@@ -141,11 +176,30 @@ async function downloadFile(url, outputPath) {
             process.exit(1);
         }
         const links = await fetchM3U8Links(url);
-        tasks = links.map((link, index) => ({
-            key: `${link} to output_${index}.mp4`,
-            url: link,
-            download_file: `output_${index}.mp4`
-        }));
+
+        // Track domains and counters
+        let currentDomain = '';
+        let counter = 0;
+
+        tasks = links.map((link) => {
+            // Extract domain from URL
+            const domain = new URL(link).hostname.split('.').slice(-2).join('_');
+            
+            // Reset counter if domain changes
+            if (domain !== currentDomain) {
+                currentDomain = domain;
+                counter = 0;
+            }
+
+            const download_file = `${domain}_${String(counter).padStart(2, '0')}.mp4`;
+            counter++;
+
+            return {
+                key: `${link} to ${download_file}`,
+                url: link,
+                download_file: download_file
+            };
+        });
         writeTasksToFile(tasks);
     }
 
