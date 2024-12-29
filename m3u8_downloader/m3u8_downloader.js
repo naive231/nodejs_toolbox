@@ -106,58 +106,24 @@ const convertTimeToSeconds = (time) => {
 // Update downloadFile function
 async function downloadFile(url, outputPath) {
     return new Promise((resolve, reject) => {
-        const filename = outputPath.split('/').pop(); // Extract filename
-        const progressBar = new SingleBar({
-            format: `${filename} [{bar}] {percentage}% | ETA: {eta}s | {value}/{total} | Speed: {speed}`,
-            barCompleteChar: '\u2588',
-            barIncompleteChar: '\u2591',
-            hideCursor: true,
-            clearOnComplete: true
-        }, Presets.shades_classic);
-
         const ffmpeg = spawn('ffmpeg', [
             '-i', url,
             '-c', 'copy',
-            outputPath,
-            '-progress', 'pipe:1'
+            outputPath
         ]);
 
-        let duration = 0;
-        let started = false;
-
-        ffmpeg.stderr.on('data', (data) => {
-            const output = data.toString();
-            if (!started && output.includes('Duration')) {
-                const match = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})/);
-                if (match) {
-                    duration = (parseInt(match[1]) * 3600) + 
-                              (parseInt(match[2]) * 60) + 
-                              parseInt(match[3]);
-                    progressBar.start(duration, 0);
-                    started = true;
-                }
-            }
-        });
-
-        ffmpeg.stdout.on('data', (data) => {
-            const output = data.toString();
-            if (output.includes('out_time_ms')) {
-                const time = parseInt(output.match(/out_time_ms=(\d+)/)[1]) / 1000000;
-                progressBar.update(time);
-            }
-        });
+        ffmpeg.stdout.pipe(process.stdout);
+        ffmpeg.stderr.pipe(process.stderr);
 
         ffmpeg.on('close', (code) => {
-            progressBar.stop();
             if (code === 0) {
-                resolve(`Successfully downloaded to ${outputPath}`);
+                resolve(`Downloaded to ${outputPath}`);
             } else {
-                reject(new Error(`FFmpeg process exited with code ${code}`));
+                reject(new Error(`FFmpeg exited with code ${code}`));
             }
         });
 
         ffmpeg.on('error', (err) => {
-            progressBar.stop();
             reject(err);
         });
     });
