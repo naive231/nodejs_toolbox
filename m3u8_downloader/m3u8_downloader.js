@@ -88,9 +88,9 @@ const writeTasksToFile = (tasks) => {
     console.log(`Tasks written to ${downloadTasksFile}`);
 };
 
-const readTasksFromFile = () => {
-    if (fs.existsSync(downloadTasksFile)) {
-        const data = fs.readFileSync(downloadTasksFile, 'utf-8');
+const readTasksFromFile = (taskFile = downloadTasksFile) => {
+    if (fs.existsSync(taskFile)) {
+        const data = fs.readFileSync(taskFile, 'utf-8');
         return JSON.parse(data);
     }
     return [];
@@ -163,16 +163,45 @@ async function downloadFile(url, outputPath) {
     });
 }
 
+const showHelp = () => {
+    const helpText = `
+M3U8 Downloader - Download M3U8 videos
+
+Usage:
+    node m3u8_downloader.js [options]
+
+Options:
+    -h, --help          Show this help message
+    -t, --task-file     Use existing task file (default: download_tasks.json)
+    -u, --url <url>     URL to fetch M3U8 links from
+
+Examples:
+    node m3u8_downloader.js -u https://example.com/video
+    node m3u8_downloader.js -t custom_tasks.json
+    `;
+    console.log(helpText);
+    process.exit(0);
+};
+
 // Main process
 (async () => {
+    const args = process.argv.slice(2);
+    
+    // Show help if no arguments or help flag
+    if (args.length === 0 || args.includes('-h') || args.includes('--help')) {
+        showHelp();
+    }
+
     await checkDependencies();
 
-    let tasks = readTasksFromFile();
-    if (tasks.length === 0) {
-        console.log('No tasks found. Fetching new tasks...');
-        const url = process.argv[2];
+    let tasks = [];
+    const urlIndex = args.indexOf('-u') !== -1 ? args.indexOf('-u') : args.indexOf('--url');
+    const taskIndex = args.indexOf('-t') !== -1 ? args.indexOf('-t') : args.indexOf('--task-file');
+
+    if (urlIndex !== -1) {
+        const url = args[urlIndex + 1];
         if (!url) {
-            console.error('Usage: node m3u8_downloader.js <URL>');
+            console.error('Error: URL is required with -u/--url option');
             process.exit(1);
         }
         const links = await fetchM3U8Links(url);
@@ -201,6 +230,15 @@ async function downloadFile(url, outputPath) {
             };
         });
         writeTasksToFile(tasks);
+    } else if (taskIndex !== -1) {
+        const taskFile = args[taskIndex + 1] || downloadTasksFile;
+        tasks = readTasksFromFile(taskFile);
+        if (tasks.length === 0) {
+            console.error('No tasks found in task file');
+            process.exit(1);
+        }
+    } else {
+        showHelp();
     }
 
     console.log('Task List:');
