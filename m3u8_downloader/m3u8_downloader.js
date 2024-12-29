@@ -88,6 +88,48 @@ const convertTimeToSeconds = (time) => {
     return hours * 3600 + minutes * 60 + seconds;
 };
 
+// Add duration fetching function
+const getDuration = (url) => {
+    return new Promise((resolve) => {
+        const cmd = [
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            url
+        ];
+
+        const ffprobe = spawn('ffprobe', cmd);
+        let output = '';
+
+        const timeout = setTimeout(() => {
+            ffprobe.kill();
+            console.warn(`Warning: Duration check timed out for ${url}`);
+            resolve('00:00:00');
+        }, 3000);
+
+        ffprobe.stdout.on('data', (data) => {
+            output += data.toString();
+        });
+
+        ffprobe.on('close', (code) => {
+            clearTimeout(timeout);
+            if (code === 0) {
+                const duration = parseFloat(output);
+                const hours = Math.floor(duration / 3600);
+                const minutes = Math.floor((duration % 3600) / 60);
+                const seconds = Math.floor(duration % 60);
+                resolve(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+            } else {
+                resolve('00:00:00');
+            }
+        });
+
+        ffprobe.on('error', () => {
+            clearTimeout(timeout);
+            resolve('00:00:00');
+        });
+    });
+};
 
 // Update downloadFile function
 async function downloadFile(url, outputPath) {
@@ -135,6 +177,34 @@ Examples:
     process.exit(0);
 };
 
+// Update task mapping to handle async
+const createTasks = async (links) => {
+    let currentDomain = '';
+    let counter = 0;
+    const tasks = [];
+
+    for (const link of links) {
+        const domain = new URL(link).hostname.split('.').slice(-2).join('_');
+        
+        if (domain !== currentDomain) {
+            currentDomain = domain;
+            counter = 0;
+        }
+
+        const download_file = `${domain}_${String(counter).padStart(2, '0')}.mp4`;
+        const duration = await getDuration(link);
+        counter++;
+
+        tasks.push({
+            key: `${link} to ${download_file} [${duration}]`,
+            url: link,
+            download_file: download_file
+        });
+    }
+
+    return tasks;
+};
+
 // Main process
 (async () => {
     const args = process.argv.slice(2);
@@ -157,30 +227,7 @@ Examples:
             process.exit(1);
         }
         const links = await fetchM3U8Links(url);
-
-        // Track domains and counters
-        let currentDomain = '';
-        let counter = 0;
-
-        tasks = links.map((link) => {
-            // Extract domain from URL
-            const domain = new URL(link).hostname.split('.').slice(-2).join('_');
-            
-            // Reset counter if domain changes
-            if (domain !== currentDomain) {
-                currentDomain = domain;
-                counter = 0;
-            }
-
-            const download_file = `${domain}_${String(counter).padStart(2, '0')}.mp4`;
-            counter++;
-
-            return {
-                key: `${link} to ${download_file}`,
-                url: link,
-                download_file: download_file
-            };
-        });
+        tasks = await createTasks(links);
         writeTasksToFile(tasks);
     } else if (taskIndex !== -1) {
         const taskFile = args[taskIndex + 1] || downloadTasksFile;
