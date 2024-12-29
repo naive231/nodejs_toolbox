@@ -14,28 +14,14 @@ const downloadTasksFile = '.download_tasks.json';
 // Utility functions
 const checkDependencies = async () => {
     try {
-        // Check if ffmpeg exists
-        const ffmpegPath = execSync('which ffmpeg').toString().trim();
-        console.log('ffmpeg is installed at:', ffmpegPath);
-        
-        // Verify ffmpeg works
-        execSync('ffmpeg -version');
-        return true;
+        const ytdlpPath = execSync('which yt-dlp', { encoding: 'utf-8' }).trim();
+        console.log(`Found yt-dlp at: ${ytdlpPath}`);
     } catch (error) {
-        console.error('Error: ffmpeg is not installed or not in PATH.');
-        console.error('Detailed error:', error.message);
+        console.error('Error: yt-dlp not found. Please install it:');
+        console.error('brew install yt-dlp');
         process.exit(1);
     }
 };
-
-// Add ffmpeg check with detailed error reporting
-try {
-    const ffmpegPath = execSync('which ffmpeg').toString().trim();
-    console.log(`Found ffmpeg at: ${ffmpegPath}`);
-} catch (error) {
-    console.error('Error: ffmpeg check failed:', error);
-    process.exit(1);
-}
 
 const fetchM3U8Links = async (url) => {
     try {
@@ -106,24 +92,24 @@ const convertTimeToSeconds = (time) => {
 // Update downloadFile function
 async function downloadFile(url, outputPath) {
     return new Promise((resolve, reject) => {
-        const ffmpeg = spawn('ffmpeg', [
-            '-i', url,
-            '-c', 'copy',
-            outputPath
+        const ytdlp = spawn('yt-dlp', [
+            '--no-warnings',
+            '-o', outputPath,
+            url
         ]);
 
-        ffmpeg.stdout.pipe(process.stdout);
-        ffmpeg.stderr.pipe(process.stderr);
+        ytdlp.stdout.pipe(process.stdout);
+        ytdlp.stderr.pipe(process.stderr);
 
-        ffmpeg.on('close', (code) => {
+        ytdlp.on('close', (code) => {
             if (code === 0) {
                 resolve(`Downloaded to ${outputPath}`);
             } else {
-                reject(new Error(`FFmpeg exited with code ${code}`));
+                reject(new Error(`yt-dlp exited with code ${code}`));
             }
         });
 
-        ffmpeg.on('error', (err) => {
+        ytdlp.on('error', (err) => {
             reject(err);
         });
     });
@@ -131,7 +117,7 @@ async function downloadFile(url, outputPath) {
 
 const showHelp = () => {
     const helpText = `
-M3U8 Downloader - Download M3U8 videos
+M3U8 Downloader - Download M3U8 videos using yt-dlp
 
 Usage:
     node m3u8_downloader.js [options]
