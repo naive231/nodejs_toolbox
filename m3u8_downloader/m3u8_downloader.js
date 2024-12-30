@@ -165,13 +165,14 @@ Usage:
     node m3u8_downloader.js [options]
 
 Options:
-    -h, --help          Show this help message
-    -t, --task-file     Use existing task file (default: download_tasks.json)
-    -u, --url <url>     URL to fetch M3U8 links from
+    -h, --help                    Show this help message
+    -t, --task-file [filename]    Use existing task file (default: .download_tasks.json)
+    -u, --url <url>              URL to fetch M3U8 links from
 
 Examples:
     node m3u8_downloader.js -u https://example.com/video
-    node m3u8_downloader.js -t custom_tasks.json
+    node m3u8_downloader.js -t                           # Uses default .download_tasks.json
+    node m3u8_downloader.js -t custom_tasks.json         # Uses specified task file
     `;
     console.log(helpText);
     process.exit(0);
@@ -209,7 +210,6 @@ const createTasks = async (links) => {
 (async () => {
     const args = process.argv.slice(2);
     
-    // Show help if no arguments or help flag
     if (args.length === 0 || args.includes('-h') || args.includes('--help')) {
         showHelp();
     }
@@ -230,7 +230,11 @@ const createTasks = async (links) => {
         tasks = await createTasks(links);
         writeTasksToFile(tasks);
     } else if (taskIndex !== -1) {
-        const taskFile = args[taskIndex + 1] || downloadTasksFile;
+        const taskFile = args[taskIndex + 1] || '.download_tasks.json';
+        if (!fs.existsSync(taskFile)) {
+            console.error(`Error: Task file '${taskFile}' not found`);
+            process.exit(1);
+        }
         tasks = readTasksFromFile(taskFile);
         if (tasks.length === 0) {
             console.error('No tasks found in task file');
